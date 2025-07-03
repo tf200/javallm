@@ -24,6 +24,10 @@ WORKDIR /app
 # Copy the built jar from the build stage
 COPY --from=build /app/build/libs/*.jar app.jar
 
+# IMPORTANT: Create the directory for SQLite database
+# Note: This means the SQLite database will be ephemeral and data will be lost
+# when the container is removed or restarted without a volume.
+RUN mkdir -p /app/data
 
 # Expose app port
 EXPOSE 8081
