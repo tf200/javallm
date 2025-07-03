@@ -10,7 +10,7 @@ COPY gradle /app/gradle
 # Pre-download dependencies
 RUN gradle build -x test --no-daemon || return 0
 
-# Now copy the source
+# Now copy the source (which includes src/main/resources/application.yml)
 COPY app/src /app/src
 
 # Build the Spring Boot fat JAR
@@ -24,8 +24,9 @@ WORKDIR /app
 # Copy the built jar from the build stage
 COPY --from=build /app/build/libs/*.jar app.jar
 
-# Expose app port (optional, for documentation)
-EXPOSE 8080
 
-# Start app
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+# Expose app port
+EXPOSE 8081
+
+# Start app with the ability to override config externally
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
