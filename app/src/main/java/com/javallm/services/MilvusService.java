@@ -53,6 +53,7 @@ public class MilvusService {
 
         public void initializeCollection(String collectionName, int vectorDimension) {
                 try {
+
                         HasCollectionReq hasCollectionReq = HasCollectionReq.builder()
                                         .collectionName(collectionName)
                                         .build();

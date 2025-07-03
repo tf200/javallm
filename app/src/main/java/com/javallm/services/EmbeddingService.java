@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -19,9 +20,9 @@ public class EmbeddingService {
     private final WebClient webClient;
     private final ObjectMapper objectMapper = new ObjectMapper(); // For converting Map to JSON String
 
-    public EmbeddingService() {
+    public EmbeddingService(@Value("${spring.embedding.service.url}") String embeddingServiceUrl) {
         this.webClient = WebClient.builder()
-                .baseUrl("http://127.0.0.1:8080")
+                .baseUrl(embeddingServiceUrl)
                 .filter(logRequest())
                 .filter(logResponse())
                 .build();
