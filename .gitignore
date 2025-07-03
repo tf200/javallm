@@ -1,0 +1,47 @@
+# Java
+*.class
+*.jar
+*.war
+*.ear
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Build directories
+/build/
+*/build/
+/out/
+
+# Gradle
+/.gradle/
+/gradle-app.setting
+/gradle-app.iml
+/build/
+
+
+
+
+
+# VS Code
+/.vscode/
+
+# Mac OS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Spring Boot specific
+/spring.log
+
+# Local environment files
+.env
+.env.*
+
+
+/app/uploads
