@@ -15,7 +15,7 @@ public class PdfTextExtractorService {
 
     // Optimal chunk size based on a 512 token limit (512 * ~4 chars/token, with a
     // buffer)
-    private static final int CHUNK_SIZE = 1000;
+    private static final int CHUNK_SIZE = 800;
     // Overlap to maintain context between chunks
     private static final int CHUNK_OVERLAP = 200;
 
