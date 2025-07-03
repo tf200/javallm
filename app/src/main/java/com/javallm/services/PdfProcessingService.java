@@ -112,9 +112,11 @@ public class PdfProcessingService {
                                                         processingFlux,
                                                         Mono.just(completionMessage));
                                 })
-                                .doOnError(
-                                                e -> logger.error("Failed to process PDF document '{}': {}",
-                                                                documentName, e.getMessage(), e))
+                                .doOnError(e -> {
+                                        logger.error("Failed to process PDF document '{}': {}", documentName,
+                                                        e.getMessage(), e);
+                                        milvusService.deleteEmbeddingsByFileId(fileUUID);
+                                })
                                 .onErrorResume(e -> Flux.error(
                                                 new RuntimeException("Failed to process PDF: " + e.getMessage(), e)));
         }
