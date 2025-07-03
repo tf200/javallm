@@ -30,9 +30,6 @@ public class Chat {
             Your job is to provide accurate, helpful answers based on the context provided in each query.
             Format your response using Markdown for better readability (use headings, bold, italic, lists, code blocks, etc. as appropriate).
             If the user's question is not covered by the provided context documents, say "I don't know."
-
-            IMPORTANT: At the end of your response, include a section titled "Sources Used" that lists the metadata
-            of all the documents you referenced in your answer. This helps with attribution and transparency.
             /no_think
             """;
     private static final String USER_PROMPT_TEMPLATE = """
@@ -43,8 +40,6 @@ public class Chat {
 
             Question:
             %s
-
-            Remember to include a "Sources Used" section at the end of your response that lists the metadata of documents you referenced.
             """;
 
     private final ChatClient chatClient;
