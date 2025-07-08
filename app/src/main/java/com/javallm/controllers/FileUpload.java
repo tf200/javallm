@@ -15,6 +15,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -162,6 +167,50 @@ public class FileUpload {
                             fileEntity.getUploadedAt() != null
                                     ? fileEntity.getUploadedAt()
                                     : null);
+                });
+    }
+
+    @GetMapping("/{fileId}")
+    public Mono<ResponseEntity<Resource>> getFile(@PathVariable String fileId) {
+        System.out.println("Received request to get file with ID: " + fileId);
+
+        return Mono.fromCallable(() -> {
+            // Get file metadata from database
+            var fileEntityOptional = fileService.getFileById(fileId);
+            if (fileEntityOptional == null || fileEntityOptional.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found");
+            }
+            var fileEntity = fileEntityOptional.get();
+
+            // Get the file path and create a Path object
+            Path filePath = Paths.get(fileEntity.getPath());
+
+            // Check if file exists on disk
+            if (!Files.exists(filePath)) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found on disk");
+            }
+
+            // Create a Resource from the file
+            Resource resource = new FileSystemResource(filePath);
+
+            // Build response with appropriate headers for PDF viewing
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileEntity.getFilename() + "\"")
+                    .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                    .header(HttpHeaders.PRAGMA, "no-cache")
+                    .header(HttpHeaders.EXPIRES, "0")
+                    .body(resource);
+        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .onErrorResume(ResponseStatusException.class, e -> {
+                    System.err.println("Error retrieving file: " + e.getReason());
+                    return Mono.just(ResponseEntity.status(e.getStatusCode()).build());
+                })
+                .onErrorResume(Exception.class, e -> {
+                    System.err.println("Unexpected error retrieving file: " + e.getMessage());
+                    e.printStackTrace();
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
                 });
     }
 
