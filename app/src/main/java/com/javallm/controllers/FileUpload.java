@@ -5,6 +5,8 @@ import com.javallm.controllers.dto.FileDto.FileDeleteResponse;
 import com.javallm.services.FileService;
 import com.javallm.services.MilvusService;
 import com.javallm.services.PdfProcessingService;
+import com.javallm.services.WordProcessingService;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
@@ -21,6 +23,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -43,11 +46,16 @@ public class FileUpload {
 
     private final String uploadDirectory = "uploads";
     private final PdfProcessingService pdfProcessingService;
+    private final WordProcessingService wordProcessingService;
     private final FileService fileService;
     private final MilvusService milvusService;
 
-    public FileUpload(PdfProcessingService pdfProcessingService, FileService fileService, MilvusService milvusService) {
+    public FileUpload(PdfProcessingService pdfProcessingService,
+            WordProcessingService wordProcessingService,
+            FileService fileService,
+            MilvusService milvusService) {
         this.pdfProcessingService = pdfProcessingService;
+        this.wordProcessingService = wordProcessingService;
         this.fileService = fileService;
         this.milvusService = milvusService;
         System.out.println("FileUpload controller initialized with upload directory: " + uploadDirectory);
@@ -77,7 +85,7 @@ public class FileUpload {
         }
         String fileUUID = UUID.randomUUID().toString();
         String uniqueFileName = originalFilename + fileUUID + fileExtension;
-        Path filePath = Paths.get(uploadDirectory, uniqueFileName); // This filePath will be consistent
+        Path filePath = Paths.get(uploadDirectory, uniqueFileName);
 
         return Mono.fromCallable(() -> {
             Files.createDirectories(filePath.getParent());
@@ -85,14 +93,15 @@ public class FileUpload {
         })
                 .flatMap(createdFilePath -> filePart.transferTo(createdFilePath).thenReturn(createdFilePath))
                 .flatMapMany(finalFilePath -> {
-                    // Now, handle the IOException from Files.newInputStream reactively
-                    // Use Mono.fromCallable to wrap the potentially blocking and throwing operation
+                    // Handle the IOException from Files.newInputStream reactively
                     return Mono.fromCallable(() -> Files.newInputStream(finalFilePath))
-                            .flatMapMany(inputStream -> { // Once inputStream is successfully obtained
-                                // This is the Flux that emits progress messages and the final completion
-                                // message from PDF processing
-                                Flux<ServerSentEvent<String>> processingFlux = pdfProcessingService
-                                        .processPdf(inputStream, uniqueFileName, fileUUID)
+                            .flatMapMany(inputStream -> {
+                                // Determine which processing service to use based on file type
+                                Flux<String> processingFlux = determineProcessingService(contentType, originalFilename)
+                                        .flatMapMany(service -> service.apply(inputStream, uniqueFileName, fileUUID));
+
+                                // Convert processing flux to ServerSentEvent flux
+                                Flux<ServerSentEvent<String>> sseProcessingFlux = processingFlux
                                         .map(message -> ServerSentEvent.<String>builder()
                                                 .data(message)
                                                 .build())
@@ -106,27 +115,22 @@ public class FileUpload {
                                             }
                                         });
 
-                                // Define the database saving Mono here, which depends on finalFilePath,
-                                // uniqueFileName, contentType etc.
+                                // Define the database saving Mono
                                 Mono<ServerSentEvent<String>> saveToDbCompletionEvent = Mono.fromRunnable(() -> {
                                     fileService.saveFile(fileUUID, originalFilename, finalFilePath.toString(),
                                             contentType);
                                     System.out.println("File metadata saved to DB for: " + uniqueFileName);
                                 })
-                                        .subscribeOn(Schedulers.boundedElastic()) // Ensure DB operation runs on a
-                                                                                  // suitable scheduler
-                                        .then(Mono.just(ServerSentEvent.<String>builder() // Emit a final success event
-                                                                                          // if DB save is part of
-                                                                                          // stream
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .then(Mono.just(ServerSentEvent.<String>builder()
                                                 .data(String.format(
                                                         "{\"type\": \"DATABASE_SAVE_COMPLETED\", \"documentName\": \"%s\"}",
                                                         uniqueFileName))
                                                 .build()));
 
-                                return processingFlux.concatWith(saveToDbCompletionEvent);
+                                return sseProcessingFlux.concatWith(saveToDbCompletionEvent);
                             })
                             .onErrorResume(IOException.class, e -> {
-                                // If Files.newInputStream throws IOException, convert it to a Flux error event
                                 System.err.println("Failed to open input stream for file " + finalFilePath + ": "
                                         + e.getMessage());
                                 return Flux.just(ServerSentEvent.<String>builder()
@@ -153,6 +157,45 @@ public class FileUpload {
                                     + e.getStatusCode().value() + "}")
                             .build());
                 });
+    }
+
+    /**
+     * Determines which processing service to use based on the file's content type
+     * and filename.
+     * Returns a Mono that emits a function that can process the file.
+     */
+    private Mono<TriFunction<InputStream, String, String, Flux<String>>> determineProcessingService(
+            String contentType, String filename) {
+
+        return Mono.fromCallable(() -> {
+            // Check for PDF files
+            if ("application/pdf".equals(contentType)) {
+                System.out.println("Processing as PDF: " + filename);
+                return (InputStream inputStream, String documentName, String fileUUID) -> pdfProcessingService
+                        .processPdf(inputStream, documentName, fileUUID);
+            }
+
+            // Check for Word files (.doc and .docx)
+            if ("application/msword".equals(contentType) ||
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(contentType)) {
+                System.out.println("Processing as Word document: " + filename);
+                return (InputStream inputStream, String documentName, String fileUUID) -> wordProcessingService
+                        .processWord(inputStream, documentName, fileUUID);
+            }
+
+            // For other supported file types, you can add additional processing services
+            // here
+            // For now, throw an exception for unsupported types
+            throw new IllegalArgumentException("No processing service available for content type: " + contentType);
+        });
+    }
+
+    /**
+     * Functional interface for the processing service methods.
+     */
+    @FunctionalInterface
+    private interface TriFunction<T, U, V, R> {
+        R apply(T t, U u, V v);
     }
 
     // listFiles endpoint to return a list of files
