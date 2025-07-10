@@ -3,6 +3,8 @@ package com.javallm.services;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.util.IOUtils;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -13,13 +15,24 @@ import java.util.List;
 @Service
 public class ExcelTextExtractorService {
 
-    // Optimal chunk size based on a 512 token limit (512 * ~4 chars/token, with a buffer)
+    // Optimal chunk size based on a 512 token limit (512 * ~4 chars/token, with a
+    // buffer)
     private static final int CHUNK_SIZE = 700;
     // Overlap to maintain context between chunks
     private static final int CHUNK_OVERLAP = 200;
 
+    static {
+        // Configure POI security settings to handle large Excel files
+        // Adjust the minimum inflate ratio (default is 0.01, meaning 1%)
+        ZipSecureFile.setMinInflateRatio(0.001); // Allow 0.1% ratio (more permissive)
+
+        // Set a reasonable max entry size (default is 1GB)
+        IOUtils.setByteArrayMaxOverride(200 * 1024 * 1024); // 200MB max for individual entries
+    }
+
     /**
-     * A record to hold a chunk of text and its corresponding sheet/section information.
+     * A record to hold a chunk of text and its corresponding sheet/section
+     * information.
      */
     public record TextChunk(String content, String sectionLabel) {
     }
@@ -31,12 +44,14 @@ public class ExcelTextExtractorService {
     }
 
     /**
-     * Extracts text from an Excel document (.xls, .xlsx, .xlsm, .xlsb), then splits it into
+     * Extracts text from an Excel document (.xls, .xlsx, .xlsm, .xlsb), then splits
+     * it into
      * overlapping chunks.
      *
      * @param inputStream The InputStream of the Excel document file.
      * @param filename    The filename to determine the document type.
-     * @return A List of TextChunks, each containing a piece of text and its section metadata.
+     * @return A List of TextChunks, each containing a piece of text and its section
+     *         metadata.
      * @throws IOException if the document cannot be loaded or read.
      */
     public List<TextChunk> extractAndSplitText(InputStream inputStream, String filename) throws IOException {
@@ -53,7 +68,8 @@ public class ExcelTextExtractorService {
                 cellContents = extractFromXls(inputStream);
                 break;
             default:
-                throw new IllegalArgumentException("Unsupported file format. Only .xls, .xlsx, .xlsm, and .xlsb files are supported.");
+                throw new IllegalArgumentException(
+                        "Unsupported file format. Only .xls, .xlsx, .xlsm, and .xlsb files are supported.");
         }
 
         return splitTextIntoChunks(cellContents);
@@ -112,10 +128,10 @@ public class ExcelTextExtractorService {
                     String cellText = getCellValueAsString(cell, dataFormatter, formulaEvaluator);
                     if (cellText != null && !cellText.trim().isEmpty()) {
                         cellContents.add(new CellContent(
-                            cellText.trim(), 
-                            sheetName, 
-                            row.getRowNum() + 1, // 1-based row index
-                            cell.getColumnIndex() + 1 // 1-based column index
+                                cellText.trim(),
+                                sheetName,
+                                row.getRowNum() + 1, // 1-based row index
+                                cell.getColumnIndex() + 1 // 1-based column index
                         ));
                     }
                 }
@@ -124,7 +140,8 @@ public class ExcelTextExtractorService {
     }
 
     /**
-     * Extracts the string value from a cell, handling different cell types including formulas.
+     * Extracts the string value from a cell, handling different cell types
+     * including formulas.
      */
     private String getCellValueAsString(Cell cell, DataFormatter dataFormatter, FormulaEvaluator formulaEvaluator) {
         if (cell == null) {
@@ -185,7 +202,8 @@ public class ExcelTextExtractorService {
     }
 
     /**
-     * Splits the text content from all cells into manageable chunks using a sliding window.
+     * Splits the text content from all cells into manageable chunks using a sliding
+     * window.
      */
     private List<TextChunk> splitTextIntoChunks(List<CellContent> cellContents) {
         List<TextChunk> chunks = new ArrayList<>();
@@ -203,11 +221,11 @@ public class ExcelTextExtractorService {
                 cellStartIndices.add(fullTextBuilder.length());
                 fullTextBuilder.append("Sheet: ").append(currentSheet).append("\n");
             }
-            
+
             cellStartIndices.add(fullTextBuilder.length());
             fullTextBuilder.append("R").append(cellContent.rowIndex())
-                           .append("C").append(cellContent.cellIndex())
-                           .append(": ").append(cellContent.text()).append("\n");
+                    .append("C").append(cellContent.cellIndex())
+                    .append(": ").append(cellContent.text()).append("\n");
         }
 
         String fullText = fullTextBuilder.toString();
@@ -250,8 +268,8 @@ public class ExcelTextExtractorService {
     /**
      * Determines the sheet and cell range for a given text chunk.
      */
-    private String getSectionLabelForChunk(int chunkStart, int chunkEnd, List<Integer> cellStartIndices, 
-                                         List<CellContent> cellContents) {
+    private String getSectionLabelForChunk(int chunkStart, int chunkEnd, List<Integer> cellStartIndices,
+            List<CellContent> cellContents) {
         if (cellContents.isEmpty()) {
             return "N/A";
         }
@@ -263,7 +281,8 @@ public class ExcelTextExtractorService {
 
         for (int i = 0; i < cellStartIndices.size() && i < cellContents.size(); i++) {
             int cellStartIndex = cellStartIndices.get(i);
-            int nextCellStartIndex = (i + 1 < cellStartIndices.size()) ? cellStartIndices.get(i + 1) : Integer.MAX_VALUE;
+            int nextCellStartIndex = (i + 1 < cellStartIndices.size()) ? cellStartIndices.get(i + 1)
+                    : Integer.MAX_VALUE;
 
             // Check if the chunk overlaps with the current cell's text span.
             if (chunkStart < nextCellStartIndex && chunkEnd > cellStartIndex) {
@@ -287,9 +306,9 @@ public class ExcelTextExtractorService {
             } else {
                 CellContent startCell = cellContents.get(startCellIndex);
                 CellContent endCell = cellContents.get(endCellIndex);
-                return String.format("%s[R%dC%d-R%dC%d]", startSheet, 
-                                   startCell.rowIndex(), startCell.cellIndex(),
-                                   endCell.rowIndex(), endCell.cellIndex());
+                return String.format("%s[R%dC%d-R%dC%d]", startSheet,
+                        startCell.rowIndex(), startCell.cellIndex(),
+                        endCell.rowIndex(), endCell.cellIndex());
             }
         } else {
             return String.format("%s-%s[Multi-sheet]", startSheet, endSheet);
