@@ -2,6 +2,7 @@ package com.javallm.controllers;
 
 import com.javallm.controllers.dto.FileDto;
 import com.javallm.controllers.dto.FileDto.FileDeleteResponse;
+import com.javallm.services.ExcelProcessingService;
 import com.javallm.services.FileService;
 import com.javallm.services.MilvusService;
 import com.javallm.services.PdfProcessingService;
@@ -42,20 +43,25 @@ public class FileUpload {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel.sheet.macroEnabled.12",  // .xlsm files
+            "application/vnd.ms-excel.sheet.binary.macroEnabled.12",  // .xlsb files
             "text/plain");
 
     private final String uploadDirectory = "uploads";
     private final PdfProcessingService pdfProcessingService;
     private final WordProcessingService wordProcessingService;
+    private final ExcelProcessingService excelProcessingService;  // NEW: Add Excel service
     private final FileService fileService;
     private final MilvusService milvusService;
 
     public FileUpload(PdfProcessingService pdfProcessingService,
             WordProcessingService wordProcessingService,
+            ExcelProcessingService excelProcessingService,  // NEW: Inject Excel service
             FileService fileService,
             MilvusService milvusService) {
         this.pdfProcessingService = pdfProcessingService;
         this.wordProcessingService = wordProcessingService;
+        this.excelProcessingService = excelProcessingService;  // NEW: Assign Excel service
         this.fileService = fileService;
         this.milvusService = milvusService;
         System.out.println("FileUpload controller initialized with upload directory: " + uploadDirectory);
@@ -181,6 +187,16 @@ public class FileUpload {
                 System.out.println("Processing as Word document: " + filename);
                 return (InputStream inputStream, String documentName, String fileUUID) -> wordProcessingService
                         .processWord(inputStream, documentName, fileUUID);
+            }
+
+            // NEW: Check for Excel files (.xls, .xlsx, .xlsm, .xlsb)
+            if ("application/vnd.ms-excel".equals(contentType) ||
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(contentType) ||
+                    "application/vnd.ms-excel.sheet.macroEnabled.12".equals(contentType) ||
+                    "application/vnd.ms-excel.sheet.binary.macroEnabled.12".equals(contentType)) {
+                System.out.println("Processing as Excel document: " + filename);
+                return (InputStream inputStream, String documentName, String fileUUID) -> excelProcessingService
+                        .processExcel(inputStream, documentName, fileUUID);
             }
 
             // For other supported file types, you can add additional processing services
